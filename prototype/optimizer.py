@@ -6,7 +6,7 @@ from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 from models import Route, ShipmentRequest
 from maps_client import MapsClient
-from carbon_calculator import calculate_route_footprint
+from carbon_calculator import calculate_route_footprint, calculate_optimal_route
 from vehicle_data import get_all_vehicles
 
 class RouteOptimizer:
@@ -31,27 +31,23 @@ class RouteOptimizer:
         all_waypoints.extend(request.intermediate_stops)
         all_waypoints.append(request.destination)
         
-        # For each vehicle type, calculate a route
-        all_routes = []
-        for vehicle_id, vehicle in self.vehicle_types.items():
-            route = self._calculate_vehicle_route(
-                all_waypoints, 
-                vehicle_id, 
-                request.weight_tons
-            )
-            
-            # Check if route meets budget constraint
-            if route.total_cost <= request.max_budget:
-                all_routes.append(route)
+        # Get route from Maps API
+        maps_route = self.maps_client.get_route(
+            origin=all_waypoints[0],
+            destination=all_waypoints[-1],
+            waypoints=all_waypoints[1:-1] if len(all_waypoints) > 2 else None
+        )
         
-        # Sort routes by carbon footprint
-        all_routes.sort(key=lambda r: r.total_co2e)
+        # Extract distance and duration data
+        total_distance, total_duration, segments_data = self.maps_client.extract_route_data(maps_route)
         
-        # Return the best route and alternatives
-        if all_routes:
-            return all_routes[0], all_routes[1:]
-        else:
-            return None, []
+        # Calculate the optimal route across all vehicle types
+        return calculate_optimal_route(
+            waypoints=all_waypoints,
+            segments_data=segments_data,
+            max_budget=request.max_budget,
+            weight_tons=request.weight_tons
+        )
     
     def _calculate_vehicle_route(
         self, 

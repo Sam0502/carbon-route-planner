@@ -40,8 +40,53 @@ while respecting budget constraints.
 st.sidebar.header("Shipment Details")
 
 # Origin and destination inputs
-origin = st.sidebar.text_input("Origin Address", "New York, NY")
-destination = st.sidebar.text_input("Destination Address", "Boston, MA")
+st.sidebar.markdown("### Origin and Destination")
+
+origin = st.sidebar.text_input("Origin Address", "New York, NY", 
+                              help="Enter a complete address with city and country/state")
+
+# Add address validation for interactive feedback if the method is available
+if origin and maps_client and hasattr(maps_client, 'validate_address'):
+    with st.sidebar:
+        with st.spinner("Validating origin address..."):
+            origin_validation = maps_client.validate_address(origin)
+            if origin_validation['valid']:
+                if origin != origin_validation['formatted_address']:
+                    st.success(f"Validated address: {origin_validation['formatted_address']}")
+                    if st.button("Use validated origin address"):
+                        origin = origin_validation['formatted_address']
+            else:
+                st.warning("Could not validate the origin address. Please check for typos.")
+            
+            # Show suggestions if available
+            if origin_validation.get('suggestions'):
+                with st.expander("Did you mean one of these addresses?"):
+                    for i, suggestion in enumerate(origin_validation['suggestions'][:3]):
+                        if st.button(f"Use: {suggestion}", key=f"origin_sugg_{i}"):
+                            origin = suggestion
+
+destination = st.sidebar.text_input("Destination Address", "Boston, MA",
+                                   help="Enter a complete address with city and country/state")
+
+# Add address validation for interactive feedback
+if destination and maps_client and not maps_client.demo_mode:
+    with st.sidebar:
+        with st.spinner("Validating destination address..."):
+            dest_validation = maps_client.validate_address(destination)
+            if dest_validation['valid']:
+                if destination != dest_validation['formatted_address']:
+                    st.success(f"Validated address: {dest_validation['formatted_address']}")
+                    if st.button("Use validated destination address"):
+                        destination = dest_validation['formatted_address']
+            else:
+                st.warning("Could not validate the destination address. Please check for typos.")
+            
+            # Show suggestions if available
+            if dest_validation.get('suggestions'):
+                with st.expander("Did you mean one of these addresses?"):
+                    for i, suggestion in enumerate(dest_validation['suggestions'][:3]):
+                        if st.button(f"Use: {suggestion}", key=f"dest_sugg_{i}"):
+                            destination = suggestion
 
 # Intermediate stops
 with st.sidebar.expander("Add Intermediate Stops", expanded=False):
@@ -58,7 +103,7 @@ with st.sidebar.expander("Payload Characteristics", expanded=False):
     volume_cbm = st.number_input("Volume (cubic meters)", 0.0, 100.0, 10.0, 0.5)
 
 # Budget constraint
-max_budget = st.sidebar.number_input("Maximum Budget (€/$/₽)", 0.0, 10000.0, 1000.0, 50.0)
+max_budget = st.sidebar.number_input("Maximum Budget (€)", 0.0, 10000.0, 1000.0, 50.0)
 
 # Time constraint
 with st.sidebar.expander("Delivery Time Window", expanded=False):
@@ -94,6 +139,14 @@ if st.sidebar.button("Find Optimal Route"):
     # Show spinner while processing
     with st.spinner("Calculating optimal routes..."):
         optimal_route, alternative_routes = route_optimizer.optimize(request)
+        
+        # Display any warnings or suggestions from the Maps API
+        if hasattr(route_optimizer.maps_client, 'last_route_warnings'):
+            warnings = route_optimizer.maps_client.last_route_warnings
+            if warnings:
+                with st.warning("Address Information"):
+                    for warning in warnings:
+                        st.write(warning)
     
     # Display results
     if optimal_route:
@@ -126,7 +179,10 @@ if st.sidebar.button("Find Optimal Route"):
                 "Total Cost": f"€{optimal_route.total_cost:.2f}",
                 "Total Distance": f"{optimal_route.total_distance:.1f} km",
                 "Total Duration": f"{optimal_route.total_duration:.2f} hours",
-                "Vehicle Type": vehicle_name
+                "Vehicle Type": vehicle_name,
+                "Emission Factor": f"{optimal_route.emission_factor:.3f} kg CO₂e/km",
+                "Cost Factor": f"€{optimal_route.cost_factor:.2f}/km",
+                "Max Payload": f"{optimal_route.max_payload:.1f} tons"
             }
             
             # Display as a table
@@ -183,7 +239,9 @@ if st.sidebar.button("Find Optimal Route"):
                         "Vehicle": vehicle.name if vehicle else "Unknown",
                         "CO₂e (kg)": f"{route.total_co2e:.2f}",
                         "Cost (€)": f"{route.total_cost:.2f}",
-                        "Duration (hours)": f"{route.total_duration:.2f}"
+                        "Emission Factor": f"{route.emission_factor:.3f} kg CO₂e/km",
+                        "Within Budget": "✅" if route.total_cost <= max_budget else "❌",
+                        "Distance (km)": f"{route.total_distance:.1f}"
                     })
                 
                 st.table(pd.DataFrame(alt_data))

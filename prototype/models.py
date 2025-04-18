@@ -35,6 +35,9 @@ class Route:
     total_co2e: float = 0.0
     total_cost: float = 0.0
     waypoints: List[str] = field(default_factory=list)
+    emission_factor: float = 0.0  # kg CO2e per km 
+    cost_factor: float = 0.0      # currency per km
+    max_payload: float = 0.0      # tons
 
     def add_segment(self, segment: RouteSegment) -> None:
         """Add a segment to the route and update totals."""
@@ -48,6 +51,12 @@ class Route:
         if not self.waypoints:
             self.waypoints.append(segment.origin)
         self.waypoints.append(segment.destination)
+        
+    def set_vehicle_attributes(self, vehicle_type):
+        """Set vehicle-specific attributes for transparency."""
+        self.emission_factor = vehicle_type.co2e_per_km
+        self.cost_factor = vehicle_type.cost_per_km
+        self.max_payload = vehicle_type.max_payload
 
 @dataclass
 class ShipmentRequest:

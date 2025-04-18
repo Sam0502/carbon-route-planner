@@ -1,9 +1,9 @@
 """
 Carbon footprint calculation module.
 """
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from models import RouteSegment, Route
-from vehicle_data import get_vehicle_by_id
+from vehicle_data import get_vehicle_by_id, get_all_vehicles
 
 def calculate_segment_footprint(
     origin: str, 
@@ -92,3 +92,58 @@ def calculate_route_footprint(
         route.add_segment(segment)
     
     return route
+
+def calculate_optimal_route(
+    waypoints: List[str],
+    segments_data: List[Dict],
+    max_budget: float,
+    weight_tons: float = None
+) -> Tuple[Optional[Route], List[Route]]:
+    """
+    Calculate the optimal route by evaluating all vehicle types and selecting the one 
+    that minimizes carbon footprint while staying within budget.
+    
+    Args:
+        waypoints: List of addresses in order (including origin and destination)
+        segments_data: List of segment data from Maps API
+        max_budget: Maximum budget constraint in currency units
+        weight_tons: Weight of payload in tons (optional)
+        
+    Returns:
+        Tuple of (optimal_route, alternative_routes) where optimal_route is the 
+        route with lowest carbon footprint within budget, and alternative_routes 
+        are other options sorted by increasing carbon footprint
+    """
+    all_vehicles = get_all_vehicles()
+    all_routes = []
+    
+    # Calculate routes for all vehicle types
+    for vehicle_id, vehicle in all_vehicles.items():
+        # Check if the payload exceeds vehicle capacity
+        if weight_tons and weight_tons > vehicle.max_payload:
+            continue  # Skip vehicles that can't handle the payload
+            
+        route = calculate_route_footprint(
+            waypoints=waypoints,
+            segments_data=segments_data,
+            vehicle_type_id=vehicle_id,
+            weight_tons=weight_tons
+        )
+        
+        # Set vehicle emission and cost factors for transparency using the new method
+        route.set_vehicle_attributes(vehicle)
+        
+        all_routes.append(route)
+    
+    # Sort routes by carbon footprint (lowest first)
+    all_routes.sort(key=lambda r: r.total_co2e)
+    
+    # Filter routes within budget
+    routes_within_budget = [r for r in all_routes if r.total_cost <= max_budget]
+    
+    if routes_within_budget:
+        # Return the lowest carbon footprint route within budget, plus alternatives
+        return routes_within_budget[0], routes_within_budget[1:] + [r for r in all_routes if r.total_cost > max_budget]
+    else:
+        # If no routes within budget, return None and all routes as alternatives
+        return None, all_routes
