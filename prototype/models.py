@@ -2,7 +2,7 @@
 Data models for carbon-optimized logistics route planner.
 """
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
 
 @dataclass
@@ -25,6 +25,7 @@ class RouteSegment:
     vehicle_type_id: str
     co2e: float         # kg CO2e
     cost: float         # in currency units
+    prediction_metadata: Dict[str, Any] = field(default_factory=dict)  # Metadata from AI prediction
 
 @dataclass
 class Route:
@@ -38,6 +39,7 @@ class Route:
     emission_factor: float = 0.0  # kg CO2e per km 
     cost_factor: float = 0.0      # currency per km
     max_payload: float = 0.0      # tons
+    used_ai_prediction: bool = False  # Whether AI was used for predictions
 
     def add_segment(self, segment: RouteSegment) -> None:
         """Add a segment to the route and update totals."""
@@ -51,6 +53,10 @@ class Route:
         if not self.waypoints:
             self.waypoints.append(segment.origin)
         self.waypoints.append(segment.destination)
+        
+        # Track if AI prediction was used
+        if segment.prediction_metadata:
+            self.used_ai_prediction = True
         
     def set_vehicle_attributes(self, vehicle_type):
         """Set vehicle-specific attributes for transparency."""
@@ -69,3 +75,8 @@ class ShipmentRequest:
     max_budget: float = float('inf')
     delivery_time_start: Optional[datetime] = None
     delivery_time_end: Optional[datetime] = None
+    # Additional parameters for AI-enhanced prediction
+    use_ai_prediction: bool = True
+    terrain_factors: List[float] = field(default_factory=list)
+    temperatures: List[float] = field(default_factory=list)
+    traffic_levels: List[float] = field(default_factory=list)

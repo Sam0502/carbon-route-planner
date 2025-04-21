@@ -41,19 +41,27 @@ class RouteOptimizer:
         # Extract distance and duration data
         total_distance, total_duration, segments_data = self.maps_client.extract_route_data(maps_route)
         
-        # Calculate the optimal route across all vehicle types
+        # Calculate the optimal route across all vehicle types with AI prediction if enabled
         return calculate_optimal_route(
             waypoints=all_waypoints,
             segments_data=segments_data,
             max_budget=request.max_budget,
-            weight_tons=request.weight_tons
+            weight_tons=request.weight_tons,
+            use_ai_prediction=request.use_ai_prediction,
+            terrain_factors=request.terrain_factors,
+            temperatures=request.temperatures,
+            traffic_levels=request.traffic_levels
         )
     
     def _calculate_vehicle_route(
         self, 
         waypoints: List[str], 
         vehicle_type_id: str,
-        weight_tons: Optional[float] = None
+        weight_tons: Optional[float] = None,
+        use_ai_prediction: bool = True,
+        terrain_factors: List[float] = None,
+        temperatures: List[float] = None,
+        traffic_levels: List[float] = None
     ) -> Route:
         """
         Calculate route for a specific vehicle type.
@@ -71,12 +79,16 @@ class RouteOptimizer:
         # Extract distance and duration data
         total_distance, total_duration, segments_data = self.maps_client.extract_route_data(maps_route)
         
-        # Calculate carbon footprint for this route
+        # Calculate carbon footprint for this route with AI prediction if enabled
         return calculate_route_footprint(
             waypoints=waypoints,
             segments_data=segments_data,
             vehicle_type_id=vehicle_type_id,
-            weight_tons=weight_tons
+            weight_tons=weight_tons,
+            use_ai_prediction=use_ai_prediction,
+            terrain_factors=terrain_factors,
+            temperatures=temperatures,
+            traffic_levels=traffic_levels
         )
     
     def solve_vehicle_routing_problem(
@@ -169,15 +181,25 @@ class RouteOptimizer:
                 distance = distance_matrix[i][i + 1] / 1000  # Convert to km
                 duration = distance / self.vehicle_types[vehicle_type_id].avg_speed  # Estimated time
                 
-                # Create the segment
+                # Create the segment with AI prediction if enabled
                 from carbon_calculator import calculate_segment_footprint
+                
+                # Get terrain factor for this segment if available
+                terrain_factor = request.terrain_factors[i] if request.terrain_factors and i < len(request.terrain_factors) else 1.0
+                temperature = request.temperatures[i] if request.temperatures and i < len(request.temperatures) else 20.0
+                traffic_level = request.traffic_levels[i] if request.traffic_levels and i < len(request.traffic_levels) else 0.5
+                
                 segment = calculate_segment_footprint(
                     origin=orig,
                     destination=dest,
                     distance=distance,
                     duration=duration,
                     vehicle_type_id=vehicle_type_id,
-                    weight_tons=request.weight_tons
+                    weight_tons=request.weight_tons,
+                    use_ai_prediction=request.use_ai_prediction,
+                    terrain_factor=terrain_factor,
+                    temperature=temperature,
+                    traffic_level=traffic_level
                 )
                 
                 route.add_segment(segment)

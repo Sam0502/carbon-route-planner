@@ -1,0 +1,37 @@
+{
+  "id": "7df660f8",
+  "timestamp": "2025-04-21 14:32:33",
+  "route": {
+    "origin": "201, Clayton Road, VIC 3168",
+    "destination": "Cowes, VIC",
+    "intermediate_stops": [],
+    "total_distance": 120.392,
+    "total_co2e": 62.78376,
+    "vehicle_type": "electric"
+  },
+  "parameters": {
+    "weight_tons": 5.0,
+    "use_ai_prediction": true,
+    "terrain_factors": [
+      1.0
+    ],
+    "temperatures": [
+      20.0
+    ],
+    "traffic_levels": [
+      0.5
+    ]
+  },
+  "ai_metadata": {
+    "method": "gemini_api",
+    "model": "gemini-1.5-pro",
+    "adjustments": {
+      "base_emission_factor": 0.45,
+      "payload_factor": 1.1375,
+      "terrain_factor": 1.0,
+      "temperature_factor": 1.0,
+      "traffic_factor": 1.025
+    },
+    "explanation": "The base CO2e emissions were calculated by multiplying the base emission factor (0.45 kg CO2e/km) by the distance (120.392 km). Then, a payload factor was applied based on the percentage of the maximum payload (5.0 tons / 18.0 tons = 0.2778), scaled linearly to a range of 1.0 to 1.25 (resulting in 1 + (0.2778 * 0.25) = 1.1375).  A small traffic factor of 1.025 was applied to account for the mild congestion (0.5). Terrain and temperature were assumed to have negligible impact given the specified values and electric vehicle type, thus their factors are 1.0. The final CO2e emissions were calculated by multiplying the base emissions by all the adjustment factors."
+  }
+}
