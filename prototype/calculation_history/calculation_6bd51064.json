@@ -1,0 +1,26 @@
+{
+  "id": "6bd51064",
+  "timestamp": "2025-05-08 17:29:38",
+  "route": {
+    "origin": "Monash Clayton campus",
+    "destination": "Philip island",
+    "intermediate_stops": [],
+    "total_distance": 123.421,
+    "total_co2e": 84.69766125,
+    "vehicle_type": "standard_diesel"
+  },
+  "parameters": {
+    "weight_tons": 5.0,
+    "use_ai_prediction": true,
+    "terrain_factors": [
+      1.0
+    ],
+    "temperatures": [
+      20.0
+    ],
+    "traffic_levels": [
+      0.5
+    ]
+  },
+  "ai_metadata": {}
+}

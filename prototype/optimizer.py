@@ -7,7 +7,7 @@ from ortools.constraint_solver import pywrapcp
 from models import Route, ShipmentRequest
 from maps_client import MapsClient
 from carbon_calculator import calculate_route_footprint, calculate_optimal_route
-from vehicle_data import get_all_vehicles
+from vehicle_data import get_all_vehicles, get_vehicle_by_id
 
 class RouteOptimizer:
     """Optimizes routes to minimize carbon footprint within budget constraints."""
@@ -41,7 +41,32 @@ class RouteOptimizer:
         # Extract distance and duration data
         total_distance, total_duration, segments_data = self.maps_client.extract_route_data(maps_route)
         
-        # Calculate the optimal route across all vehicle types with AI prediction if enabled
+        # If a specific vehicle is requested, calculate route only for that vehicle
+        if request.vehicle_type_id:
+            # Calculate route with the manually selected vehicle
+            selected_route = calculate_route_footprint(
+                waypoints=all_waypoints,
+                segments_data=segments_data,
+                vehicle_type_id=request.vehicle_type_id,
+                weight_tons=request.weight_tons,
+                use_ai_prediction=request.use_ai_prediction,
+                terrain_factors=request.terrain_factors,
+                temperatures=request.temperatures,
+                traffic_levels=request.traffic_levels
+            )
+            
+            # Set vehicle attributes
+            vehicle = get_vehicle_by_id(request.vehicle_type_id)
+            selected_route.set_vehicle_attributes(vehicle)
+            
+            # Check if route is within budget
+            if selected_route.total_cost <= request.max_budget:
+                return selected_route, []  # No alternatives when specific vehicle is selected
+            else:
+                # Return the manually selected route with a warning about budget
+                return None, [selected_route]  # Return as an alternative that exceeds budget
+        
+        # If no specific vehicle selected, calculate the optimal route across all vehicle types
         return calculate_optimal_route(
             waypoints=all_waypoints,
             segments_data=segments_data,

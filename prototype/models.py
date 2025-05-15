@@ -75,6 +75,8 @@ class ShipmentRequest:
     max_budget: float = float('inf')
     delivery_time_start: Optional[datetime] = None
     delivery_time_end: Optional[datetime] = None
+    # Manual vehicle selection
+    vehicle_type_id: Optional[str] = None
     # Additional parameters for AI-enhanced prediction
     use_ai_prediction: bool = True
     terrain_factors: List[float] = field(default_factory=list)

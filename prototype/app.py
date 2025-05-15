@@ -42,8 +42,12 @@ ai_predictor = get_predictor()
 if 'calculation_history' not in st.session_state:
     st.session_state.calculation_history = []
 
+# For route comparison
+if 'comparison_routes' not in st.session_state:
+    st.session_state.comparison_routes = []
+
 # Add page navigation
-page = st.sidebar.radio("Navigation", ["Route Planner", "Carbon Reports", "Data Transparency"])
+page = st.sidebar.radio("Navigation", ["Route Planner", "Route Comparison", "Carbon Reports", "Data Transparency"])
 
 if page == "Route Planner":
     # Title
@@ -121,6 +125,80 @@ if page == "Route Planner":
 
     # Budget constraint
     max_budget = st.sidebar.number_input("Maximum Budget (€)", 0.0, 10000.0, 1000.0, 50.0)
+
+    # Vehicle selection
+    st.sidebar.markdown("### Vehicle Selection")
+    
+    # Get all available vehicles
+    all_vehicles = get_all_vehicles()
+    
+    # Group vehicles by category (Ground vs Air)
+    ground_vehicles = {k: v for k, v in all_vehicles.items() 
+                      if not (k.startswith("cargo_plane") or k == "sustainable_aviation")}
+    air_vehicles = {k: v for k, v in all_vehicles.items() 
+                   if k.startswith("cargo_plane") or k == "sustainable_aviation"}
+    
+    # Create options dictionaries
+    ground_vehicle_options = {v.name: v.id for v in ground_vehicles.values()}
+    air_vehicle_options = {v.name: v.id for v in air_vehicles.values()}
+    
+    # Vehicle selection mode
+    vehicle_selection_mode = st.sidebar.radio(
+        "Vehicle Selection Mode",
+        ["Automatic (Optimize)", "Manual (Choose specific vehicle)"],
+        help="Automatic mode selects the best vehicle based on carbon efficiency within budget. Manual mode lets you specify a vehicle."
+    )
+    
+    # Only show vehicle selector in manual mode
+    selected_vehicle_id = None
+    if vehicle_selection_mode == "Manual (Choose specific vehicle)":
+        # First select transportation category
+        transport_category = st.sidebar.radio(
+            "Transportation Category",
+            ["Ground", "Air"],
+            help="Choose between ground transportation (trucks, vans) or air transportation (cargo planes)"
+        )
+        
+        # Then select specific vehicle based on category
+        if transport_category == "Ground":
+            vehicle_options = ground_vehicle_options
+            vehicle_list = ground_vehicles
+        else: # Air
+            vehicle_options = air_vehicle_options
+            vehicle_list = air_vehicles
+            
+        # Create a selection box with vehicles and their emissions/costs
+        vehicle_names = list(vehicle_options.keys())
+        
+        if vehicle_names:
+            selected_vehicle_name = st.sidebar.selectbox(
+                f"Select {transport_category} Vehicle Type",
+                vehicle_names,
+                format_func=lambda x: f"{x} - {all_vehicles[vehicle_options[x]].co2e_per_km:.3f} kg CO₂e/km",
+                help=f"Choose a specific {transport_category.lower()} vehicle type for this route"
+            )
+            
+            # Get the ID of selected vehicle
+            selected_vehicle_id = vehicle_options[selected_vehicle_name]
+            
+            # Show details about the selected vehicle
+            selected_vehicle = all_vehicles[selected_vehicle_id]
+            st.sidebar.info(
+                f"**{selected_vehicle.name} Details:**\n\n"
+                f"- Emissions: {selected_vehicle.co2e_per_km:.3f} kg CO₂e/km\n"
+                f"- Cost: €{selected_vehicle.cost_per_km:.2f}/km\n"
+                f"- Max payload: {selected_vehicle.max_payload} tons\n"
+                f"- Avg. speed: {selected_vehicle.avg_speed} km/h"
+            )
+            
+            # Show aviation-specific warning if applicable
+            if transport_category == "Air":
+                st.sidebar.warning(
+                    "⚠️ **Aviation Impact Note:** Air transportation typically has a much higher carbon "
+                    "footprint than ground options, but offers significantly faster delivery times."
+                )
+        else:
+            st.sidebar.warning(f"No {transport_category.lower()} vehicles available in this system.")
 
     # Time constraint
     with st.sidebar.expander("Delivery Time Window", expanded=False):
@@ -233,6 +311,8 @@ if page == "Route Planner":
             max_budget=max_budget,
             delivery_time_start=delivery_time_start_dt,
             delivery_time_end=delivery_time_end_dt,
+            # Selected vehicle
+            vehicle_type_id=selected_vehicle_id if vehicle_selection_mode == "Manual (Choose specific vehicle)" else None,
             # AI prediction parameters
             use_ai_prediction=use_ai_prediction,
             terrain_factors=terrain_factors,
@@ -318,219 +398,250 @@ if page == "Route Planner":
                         json.dump(calculation_record, f, indent=2)
                 except Exception as e:
                     st.warning(f"Could not save calculation history to file: {str(e)}")
-        
-        # Display results
-        if optimal_route:
-            st.success("Optimal route found!")
             
-            # Main columns
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.subheader("Optimal Route")
-                
-                # Map placeholder
-                st.markdown("#### Route Map")
-                st.info(
-                    "This is a placeholder for the route map. In a production version, "
-                    "this would display an interactive map using Google Maps API."
-                )
-                
-                # Route summary
-                st.markdown("#### Route Summary")
-                
-                # Get vehicle for optimal route
-                vehicle_id = optimal_route.segments[0].vehicle_type_id if optimal_route.segments else None
-                vehicle = get_vehicle_by_id(vehicle_id) if vehicle_id else None
-                vehicle_name = vehicle.name if vehicle else "Unknown"
-                
-                # Format data
-                optimal_route_data = {
-                    "Total Carbon Footprint": f"{optimal_route.total_co2e:.2f} kg CO₂e",
-                    "Total Cost": f"€{optimal_route.total_cost:.2f}",
-                    "Total Distance": f"{optimal_route.total_distance:.1f} km",
-                    "Total Duration": f"{optimal_route.total_duration:.2f} hours",
-                    "Vehicle Type": vehicle_name,
-                    "Emission Factor": f"{optimal_route.emission_factor:.3f} kg CO₂e/km",
-                    "Cost Factor": f"€{optimal_route.cost_factor:.2f}/km",
-                    "Max Payload": f"{optimal_route.max_payload:.1f} tons"
+            # Store route for comparison
+            if optimal_route:
+                # Create a comparison record with all relevant details
+                comparison_route = {
+                    "id": str(uuid.uuid4())[:8],
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "name": f"{origin.split(',')[0]} → {destination.split(',')[0]}",
+                    "route": optimal_route,
+                    "parameters": {
+                        "origin": origin,
+                        "destination": destination,
+                        "intermediate_stops": intermediate_stops,
+                        "weight_tons": weight_tons,
+                        "volume_cbm": volume_cbm,
+                        "use_ai_prediction": use_ai_prediction,
+                        "terrain_factors": terrain_factors,
+                        "temperatures": temperature_factors,
+                        "traffic_levels": traffic_levels,
+                        "vehicle_type": optimal_route.segments[0].vehicle_type_id if optimal_route.segments else "standard_diesel"
+                    }
                 }
                 
-                # Add AI prediction badge if used
-                if optimal_route.used_ai_prediction:
-                    st.info("🧠 **AI-Enhanced Prediction**: CO₂e calculated using AI model considering terrain, temperature, and traffic conditions")
+                # Add to the comparison routes list
+                if len(st.session_state.comparison_routes) >= 5:
+                    st.session_state.comparison_routes.pop(0)  # Remove the oldest route if we have too many
                 
-                # Display as a table
-                st.table(pd.DataFrame(list(optimal_route_data.items()), columns=["Metric", "Value"]))
+                st.session_state.comparison_routes.append(comparison_route)
                 
-                # Route breakdown
-                st.markdown("#### Route Breakdown")
+                # Show save confirmation
+                st.success("Route saved for comparison! Go to 'Route Comparison' page to compare with other routes.")
+            
+            # Display results
+            if optimal_route:
+                st.success("Optimal route found!")
                 
-                if optimal_route.segments:
-                    # Prepare segment data
-                    segments_data = []
+                # Main columns
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.subheader("Optimal Route")
                     
-                    for segment in optimal_route.segments:
-                        vehicle = get_vehicle_by_id(segment.vehicle_type_id)
-                        
-                        # Base segment data
-                        segment_data = {
-                            "Origin": segment.origin,
-                            "Destination": segment.destination,
-                            "Distance (km)": f"{segment.distance:.1f}",
-                            "Duration (hours)": f"{segment.duration:.2f}",
-                            "Vehicle": vehicle.name,
-                            "CO₂e (kg)": f"{segment.co2e:.2f}",
-                            "Cost (€)": f"{segment.cost:.2f}"
-                        }
-                        
-                        # Add AI prediction factors if available
-                        if hasattr(segment, 'prediction_metadata') and segment.prediction_metadata:
-                            if "adjustments" in segment.prediction_metadata:
-                                adjustments = segment.prediction_metadata["adjustments"]
-                                # Add relevant factors to display
-                                for factor, value in adjustments.items():
-                                    factor_name = factor.replace("_factor", "").capitalize()
-                                    segment_data[factor_name] = f"{value:.2f}"
-                        
-                        segments_data.append(segment_data)
+                    # Map placeholder
+                    st.markdown("#### Route Map")
+                    st.info(
+                        "This is a placeholder for the route map. In a production version, "
+                        "this would display an interactive map using Google Maps API."
+                    )
+                    
+                    # Route summary
+                    st.markdown("#### Route Summary")
+                    
+                    # Get vehicle for optimal route
+                    vehicle_id = optimal_route.segments[0].vehicle_type_id if optimal_route.segments else None
+                    vehicle = get_vehicle_by_id(vehicle_id) if vehicle_id else None
+                    vehicle_name = vehicle.name if vehicle else "Unknown"
+                    
+                    # Format data
+                    optimal_route_data = {
+                        "Total Carbon Footprint": f"{optimal_route.total_co2e:.2f} kg CO₂e",
+                        "Total Cost": f"€{optimal_route.total_cost:.2f}",
+                        "Total Distance": f"{optimal_route.total_distance:.1f} km",
+                        "Total Duration": f"{optimal_route.total_duration:.2f} hours",
+                        "Vehicle Type": vehicle_name,
+                        "Emission Factor": f"{optimal_route.emission_factor:.3f} kg CO₂e/km",
+                        "Cost Factor": f"€{optimal_route.cost_factor:.2f}/km",
+                        "Max Payload": f"{optimal_route.max_payload:.1f} tons"
+                    }
+                    
+                    # Add AI prediction badge if used
+                    if optimal_route.used_ai_prediction:
+                        st.info("🧠 **AI-Enhanced Prediction**: CO₂e calculated using AI model considering terrain, temperature, and traffic conditions")
                     
                     # Display as a table
-                    st.table(pd.DataFrame(segments_data))
-                
-            with col2:
-                # Carbon footprint visualization
-                st.markdown("#### Carbon Footprint Breakdown")
-                
-                # Prepare data for chart
-                if optimal_route.segments:
-                    segment_labels = [f"{s.origin[:10]}→{s.destination[:10]}" for s in optimal_route.segments]
-                    segment_co2e = [s.co2e for s in optimal_route.segments]
+                    st.table(pd.DataFrame(list(optimal_route_data.items()), columns=["Metric", "Value"]))
                     
-                    # Create pie chart
-                    fig, ax = plt.subplots(figsize=(8, 8))
-                    ax.pie(segment_co2e, labels=segment_labels, autopct='%1.1f%%', startangle=90)
-                    ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
-                    st.pyplot(fig)
-                
-                # AI vs Standard prediction comparison if both are available
-                if optimal_route.used_ai_prediction and standard_prediction_route:
-                    st.markdown("#### AI vs Standard Prediction")
+                    # Route breakdown
+                    st.markdown("#### Route Breakdown")
                     
-                    # Calculate the differences
-                    ai_co2e = optimal_route.total_co2e
-                    std_co2e = standard_prediction_route.total_co2e
-                    diff_pct = ((ai_co2e / std_co2e) - 1) * 100 if std_co2e > 0 else 0
-                    
-                    # Display comparison stats
-                    st.markdown(f"""
-                    **Standard calculation**: {std_co2e:.2f} kg CO₂e  
-                    **AI-enhanced calculation**: {ai_co2e:.2f} kg CO₂e  
-                    **Difference**: {ai_co2e - std_co2e:.2f} kg CO₂e ({diff_pct:+.1f}%)
-                    """)
-                    
-                    # Create comparison bar chart
-                    fig, ax = plt.subplots(figsize=(8, 5))
-                    
-                    # Prepare segment-by-segment comparison
-                    segment_labels = [f"Segment {i+1}" for i in range(len(optimal_route.segments))]
-                    ai_segment_co2e = [s.co2e for s in optimal_route.segments]
-                    std_segment_co2e = [s.co2e for s in standard_prediction_route.segments]
-                    
-                    x = np.arange(len(segment_labels))
-                    width = 0.35
-                    
-                    # Plot bars
-                    bars1 = ax.bar(x - width/2, std_segment_co2e, width, label='Standard')
-                    bars2 = ax.bar(x + width/2, ai_segment_co2e, width, label='AI Enhanced')
-                    
-                    # Add text and labels
-                    ax.set_ylabel('CO₂e (kg)')
-                    ax.set_title('CO₂e by Segment: AI vs Standard')
-                    ax.set_xticks(x)
-                    ax.set_xticklabels(segment_labels)
-                    ax.legend()
-                    
-                    # Add percentage difference labels
-                    for i, (ai, std) in enumerate(zip(ai_segment_co2e, std_segment_co2e)):
-                        diff = ((ai / std) - 1) * 100 if std > 0 else 0
-                        ax.annotate(f"{diff:+.1f}%", 
-                                    xy=(i + width/2, ai + 5),
-                                    ha='center', va='bottom',
-                                    fontsize=9, fontweight='bold',
-                                    color='green' if diff < 0 else 'red')
-                    
-                    # Display the chart
-                    st.pyplot(fig)
-                    
-                    with st.expander("Why are the predictions different?"):
-                        st.markdown("""
-                        ### Factors that AI prediction considers:
+                    if optimal_route.segments:
+                        # Prepare segment data
+                        segments_data = []
                         
-                        1. **Terrain effects**: Uphill driving can increase fuel consumption by 20-40%
-                        2. **Temperature impact**: Extreme temperatures reduce efficiency (heating/cooling use)
-                        3. **Traffic congestion**: Stop-start driving increases emissions substantially
-                        4. **Non-linear payload effects**: Emissions don't scale linearly with weight
-                        5. **Speed efficiency curve**: Vehicles have an optimal speed range for efficiency
+                        for segment in optimal_route.segments:
+                            vehicle = get_vehicle_by_id(segment.vehicle_type_id)
+                            
+                            # Base segment data
+                            segment_data = {
+                                "Origin": segment.origin,
+                                "Destination": segment.destination,
+                                "Distance (km)": f"{segment.distance:.1f}",
+                                "Duration (hours)": f"{segment.duration:.2f}",
+                                "Vehicle": vehicle.name,
+                                "CO₂e (kg)": f"{segment.co2e:.2f}",
+                                "Cost (€)": f"{segment.cost:.2f}"
+                            }
+                            
+                            # Add AI prediction factors if available
+                            if hasattr(segment, 'prediction_metadata') and segment.prediction_metadata:
+                                if "adjustments" in segment.prediction_metadata:
+                                    adjustments = segment.prediction_metadata["adjustments"]
+                                    # Add relevant factors to display
+                                    for factor, value in adjustments.items():
+                                        factor_name = factor.replace("_factor", "").capitalize()
+                                        segment_data[factor_name] = f"{value:.2f}"
+                            
+                            segments_data.append(segment_data)
                         
-                        The standard calculation uses fixed emission factors that don't account for these dynamic conditions.
-                        """)
-                
-                # AI prediction details if available
-                if optimal_route.used_ai_prediction:
-                    with st.expander("AI Prediction Details"):
-                        st.markdown("#### How the AI calculates emissions")
-                        st.markdown("""
-                        The AI prediction model considers multiple factors to provide a more accurate CO₂e estimate:
+                        # Display as a table
+                        st.table(pd.DataFrame(segments_data))
+                    
+                with col2:
+                    # Carbon footprint visualization
+                    st.markdown("#### Carbon Footprint Breakdown")
+                    
+                    # Prepare data for chart
+                    if optimal_route.segments:
+                        segment_labels = [f"{s.origin[:10]}→{s.destination[:10]}" for s in optimal_route.segments]
+                        segment_co2e = [s.co2e for s in optimal_route.segments]
                         
-                        1. **Vehicle type & base emissions**: Starting point for calculation
-                        2. **Payload impact**: How cargo weight affects fuel consumption
-                        3. **Terrain difficulty**: Hilly routes increase fuel consumption
-                        4. **Temperature**: Extreme temperatures (hot or cold) increase fuel use
-                        5. **Traffic conditions**: Stop-and-go traffic increases emissions
+                        # Create pie chart
+                        fig, ax = plt.subplots(figsize=(8, 8))
+                        ax.pie(segment_co2e, labels=segment_labels, autopct='%1.1f%%', startangle=90)
+                        ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
+                        st.pyplot(fig)
+                    
+                    # AI vs Standard prediction comparison if both are available
+                    if optimal_route.used_ai_prediction and standard_prediction_route:
+                        st.markdown("#### AI vs Standard Prediction")
                         
-                        The model combines these factors to estimate the total carbon footprint.
+                        # Calculate the differences
+                        ai_co2e = optimal_route.total_co2e
+                        std_co2e = standard_prediction_route.total_co2e
+                        diff_pct = ((ai_co2e / std_co2e) - 1) * 100 if std_co2e > 0 else 0
+                        
+                        # Display comparison stats
+                        st.markdown(f"""
+                        **Standard calculation**: {std_co2e:.2f} kg CO₂e  
+                        **AI-enhanced calculation**: {ai_co2e:.2f} kg CO₂e  
+                        **Difference**: {ai_co2e - std_co2e:.2f} kg CO₂e ({diff_pct:+.1f}%)
                         """)
                         
-                        # Show any prediction metadata from the first segment
-                        if optimal_route.segments and hasattr(optimal_route.segments[0], 'prediction_metadata'):
-                            metadata = optimal_route.segments[0].prediction_metadata
-                            if metadata.get("method") == "gemini_api":
-                                st.success("✅ Using Gemini AI model for predictions")
-                                if "explanation" in metadata:
-                                    st.markdown(f"**Model explanation**: {metadata['explanation']}")
-                            else:
-                                st.info("ℹ️ Using enhanced factor-based calculation (AI fallback mode)")
-                
-                # Alternative routes
-                st.markdown("#### Alternative Routes")
-                
-                if alternative_routes:
-                    alt_data = []
-                    for i, route in enumerate(alternative_routes[:3]):  # Show up to 3 alternatives
-                        vehicle_id = route.segments[0].vehicle_type_id if route.segments else None
-                        vehicle = get_vehicle_by_id(vehicle_id) if vehicle_id else None
+                        # Create comparison bar chart
+                        fig, ax = plt.subplots(figsize=(8, 5))
                         
-                        ai_tag = " (AI)" if route.used_ai_prediction else ""
+                        # Prepare segment-by-segment comparison
+                        segment_labels = [f"Segment {i+1}" for i in range(len(optimal_route.segments))]
+                        ai_segment_co2e = [s.co2e for s in optimal_route.segments]
+                        std_segment_co2e = [s.co2e for s in standard_prediction_route.segments]
                         
-                        alt_data.append({
-                            "Option": i + 1,
-                            "Vehicle": f"{vehicle.name if vehicle else 'Unknown'}{ai_tag}",
-                            "CO₂e (kg)": f"{route.total_co2e:.2f}",
-                            "Cost (€)": f"{route.total_cost:.2f}",
-                            "Emission Factor": f"{route.emission_factor:.3f} kg CO₂e/km",
-                            "Within Budget": "✅" if route.total_cost <= max_budget else "❌",
-                            "Distance (km)": f"{route.total_distance:.1f}"
-                        })
+                        x = np.arange(len(segment_labels))
+                        width = 0.35
+                        
+                        # Plot bars
+                        bars1 = ax.bar(x - width/2, std_segment_co2e, width, label='Standard')
+                        bars2 = ax.bar(x + width/2, ai_segment_co2e, width, label='AI Enhanced')
+                        
+                        # Add text and labels
+                        ax.set_ylabel('CO₂e (kg)')
+                        ax.set_title('CO₂e by Segment: AI vs Standard')
+                        ax.set_xticks(x)
+                        ax.set_xticklabels(segment_labels)
+                        ax.legend()
+                        
+                        # Add percentage difference labels
+                        for i, (ai, std) in enumerate(zip(ai_segment_co2e, std_segment_co2e)):
+                            diff = ((ai / std) - 1) * 100 if std > 0 else 0
+                            ax.annotate(f"{diff:+.1f}%", 
+                                        xy=(i + width/2, ai + 5),
+                                        ha='center', va='bottom',
+                                        fontsize=9, fontweight='bold',
+                                        color='green' if diff < 0 else 'red')
+                        
+                        # Display the chart
+                        st.pyplot(fig)
+                        
+                        with st.expander("Why are the predictions different?"):
+                            st.markdown("""
+                            ### Factors that AI prediction considers:
+                            
+                            1. **Terrain effects**: Uphill driving can increase fuel consumption by 20-40%
+                            2. **Temperature impact**: Extreme temperatures reduce efficiency (heating/cooling use)
+                            3. **Traffic congestion**: Stop-start driving increases emissions substantially
+                            4. **Non-linear payload effects**: Emissions don't scale linearly with weight
+                            5. **Speed efficiency curve**: Vehicles have an optimal speed range for efficiency
+                            
+                            The standard calculation uses fixed emission factors that don't account for these dynamic conditions.
+                            """)
                     
-                    st.table(pd.DataFrame(alt_data))
-                else:
-                    st.info("No alternative routes found within budget constraints.")
-        else:
-            st.error(
-                "No routes found within budget constraints. "
-                "Please increase your budget or modify your route."
-            )
+                    # AI prediction details if available
+                    if optimal_route.used_ai_prediction:
+                        with st.expander("AI Prediction Details"):
+                            st.markdown("#### How the AI calculates emissions")
+                            st.markdown("""
+                            The AI prediction model considers multiple factors to provide a more accurate CO₂e estimate:
+                            
+                            1. **Vehicle type & base emissions**: Starting point for calculation
+                            2. **Payload impact**: How cargo weight affects fuel consumption
+                            3. **Terrain difficulty**: Hilly routes increase fuel consumption
+                            4. **Temperature**: Extreme temperatures (hot or cold) increase fuel use
+                            5. **Traffic conditions**: Stop-and-go traffic increases emissions
+                            
+                            The model combines these factors to estimate the total carbon footprint.
+                            """)
+                            
+                            # Show any prediction metadata from the first segment
+                            if optimal_route.segments and hasattr(optimal_route.segments[0], 'prediction_metadata'):
+                                metadata = optimal_route.segments[0].prediction_metadata
+                                if metadata.get("method") == "gemini_api":
+                                    st.success("✅ Using Gemini AI model for predictions")
+                                    if "explanation" in metadata:
+                                        st.markdown(f"**Model explanation**: {metadata['explanation']}")
+                                else:
+                                    st.info("ℹ️ Using enhanced factor-based calculation (AI fallback mode)")
+                    
+                    # Alternative routes
+                    st.markdown("#### Alternative Routes")
+                    
+                    if alternative_routes:
+                        alt_data = []
+                        for i, route in enumerate(alternative_routes[:3]):  # Show up to 3 alternatives
+                            vehicle_id = route.segments[0].vehicle_type_id if route.segments else None
+                            vehicle = get_vehicle_by_id(vehicle_id) if vehicle_id else None
+                            
+                            ai_tag = " (AI)" if route.used_ai_prediction else ""
+                            
+                            alt_data.append({
+                                "Option": i + 1,
+                                "Vehicle": f"{vehicle.name if vehicle else 'Unknown'}{ai_tag}",
+                                "CO₂e (kg)": f"{route.total_co2e:.2f}",
+                                "Cost (€)": f"{route.total_cost:.2f}",
+                                "Emission Factor": f"{route.emission_factor:.3f} kg CO₂e/km",
+                                "Within Budget": "✅" if route.total_cost <= max_budget else "❌",
+                                "Distance (km)": f"{route.total_distance:.1f}"
+                            })
+                        
+                        st.table(pd.DataFrame(alt_data))
+                    else:
+                        st.info("No alternative routes found within budget constraints.")
+            else:
+                st.error(
+                    "No routes found within budget constraints. "
+                    "Please increase your budget or modify your route."
+                )
 
     # If no route has been calculated yet, show information
     if 'optimal_route' not in locals():
@@ -572,6 +683,366 @@ if page == "Route Planner":
             
             This gives you a more realistic picture of your shipment's environmental impact.
             """)
+
+elif page == "Route Comparison":
+    st.title("🔄 Route Comparison Tool")
+    
+    st.markdown("""
+    Compare multiple routes with different parameters to find the most efficient option for your logistics needs.
+    This tool helps you understand how different factors affect carbon emissions and costs.
+    """)
+    
+    # Check if we have routes to compare
+    if not st.session_state.comparison_routes:
+        st.info("No routes available for comparison. Use the Route Planner to generate routes first.")
+    else:
+        # Display available routes
+        st.subheader("Available Routes for Comparison")
+        
+        # Create a multi-select to choose which routes to compare
+        route_options = {f"{r['id']}: {r['name']} ({r['timestamp']})": i 
+                        for i, r in enumerate(st.session_state.comparison_routes)}
+        
+        selected_indices = []
+        if len(route_options) > 0:
+            selected_routes = st.multiselect(
+                "Select routes to compare (2-5 routes recommended)",
+                options=list(route_options.keys()),
+                default=list(route_options.keys())[:min(3, len(route_options))]
+            )
+            
+            selected_indices = [route_options[key] for key in selected_routes]
+        
+        # If we have selected routes, show the comparison
+        if selected_indices:
+            routes_to_compare = [st.session_state.comparison_routes[i] for i in selected_indices]
+            
+            # Show a summary table of the routes
+            summary_data = []
+            for r in routes_to_compare:
+                route = r["route"]
+                params = r["parameters"]
+                
+                vehicle_id = params["vehicle_type"]
+                vehicle = get_vehicle_by_id(vehicle_id) if vehicle_id else None
+                vehicle_name = vehicle.name if vehicle else "Unknown"
+                
+                ai_tag = " (AI)" if route.used_ai_prediction else ""
+                
+                summary_data.append({
+                    "Route ID": r["id"],
+                    "Origin-Destination": r["name"],
+                    "Vehicle Type": f"{vehicle_name}{ai_tag}",
+                    "Distance (km)": f"{route.total_distance:.1f}",
+                    "CO₂e (kg)": f"{route.total_co2e:.2f}",
+                    "Cost (€)": f"{route.total_cost:.2f}",
+                    "Duration (hrs)": f"{route.total_duration:.2f}",
+                    "Stops": len(params["intermediate_stops"]),
+                    "Payload (tons)": params["weight_tons"]
+                })
+            
+            st.table(pd.DataFrame(summary_data))
+            
+            # Create visualizations to compare the routes
+            st.subheader("Comparison Charts")
+            
+            # Create tabs for different comparisons
+            tab1, tab2, tab3, tab4 = st.tabs(["CO₂e", "Cost", "Efficiency", "Parameters"])
+            
+            with tab1:
+                # CO2e comparison
+                st.markdown("### Carbon Footprint Comparison")
+                
+                # Prepare data for chart
+                route_ids = [r["id"] for r in routes_to_compare]
+                co2e_values = [r["route"].total_co2e for r in routes_to_compare]
+                vehicle_types = [get_vehicle_by_id(r["parameters"]["vehicle_type"]).name
+                                if get_vehicle_by_id(r["parameters"]["vehicle_type"]) else "Unknown"
+                                for r in routes_to_compare]
+                
+                # Create comparison bar chart
+                fig, ax = plt.subplots(figsize=(10, 6))
+                bars = ax.bar(route_ids, co2e_values, 
+                             color=[plt.cm.viridis(i/len(route_ids)) for i in range(len(route_ids))])
+                
+                # Add annotations
+                for i, v in enumerate(co2e_values):
+                    ax.text(i, v + 5, f"{v:.1f} kg", ha='center', fontweight='bold')
+                    ax.text(i, v/2, vehicle_types[i], ha='center', color='white', fontweight='bold')
+                
+                # Add titles and labels
+                ax.set_xlabel('Route ID')
+                ax.set_ylabel('CO₂e (kg)')
+                ax.set_title('Carbon Footprint by Route')
+                
+                # Highlight the route with lowest CO2e
+                min_co2e_idx = co2e_values.index(min(co2e_values))
+                bars[min_co2e_idx].set_color('green')
+                
+                st.pyplot(fig)
+                
+                # Show best route for CO2e
+                st.success(f"✅ Route {route_ids[min_co2e_idx]} has the lowest carbon footprint: "
+                          f"{min(co2e_values):.1f} kg CO₂e using {vehicle_types[min_co2e_idx]}.")
+            
+            with tab2:
+                # Cost comparison
+                st.markdown("### Cost Comparison")
+                
+                # Prepare data for chart
+                route_ids = [r["id"] for r in routes_to_compare]
+                cost_values = [r["route"].total_cost for r in routes_to_compare]
+                co2e_values = [r["route"].total_co2e for r in routes_to_compare]
+                
+                # Create grouped bar chart
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                x = np.arange(len(route_ids))
+                width = 0.35
+                
+                # Normalize the values for better visualization
+                max_cost = max(cost_values)
+                max_co2e = max(co2e_values)
+                
+                normalized_cost = [c/max_cost*100 for c in cost_values]
+                normalized_co2e = [c/max_co2e*100 for c in co2e_values]
+                
+                ax.bar(x - width/2, normalized_cost, width, label='Cost (% of max)')
+                ax.bar(x + width/2, normalized_co2e, width, label='CO₂e (% of max)')
+                
+                # Add value annotations
+                for i, (c, co2) in enumerate(zip(cost_values, co2e_values)):
+                    ax.text(i - width/2, normalized_cost[i] + 3, f"€{c:.0f}", ha='center', fontsize=9)
+                    ax.text(i + width/2, normalized_co2e[i] + 3, f"{co2:.0f} kg", ha='center', fontsize=9)
+                
+                ax.set_ylabel('Percent of Maximum Value')
+                ax.set_title('Cost vs. CO₂e Comparison (Normalized)')
+                ax.set_xticks(x)
+                ax.set_xticklabels(route_ids)
+                ax.legend()
+                
+                st.pyplot(fig)
+                
+                # Show best route for cost
+                min_cost_idx = cost_values.index(min(cost_values))
+                st.success(f"✅ Route {route_ids[min_cost_idx]} has the lowest cost: "
+                          f"€{min(cost_values):.2f}")
+                
+                # Calculate cost per ton-km and CO2e per ton-km
+                st.markdown("### Cost-Efficiency Analysis")
+                
+                efficiency_data = []
+                for r in routes_to_compare:
+                    route = r["route"]
+                    params = r["parameters"]
+                    
+                    ton_km = route.total_distance * params["weight_tons"]
+                    cost_per_ton_km = route.total_cost / ton_km if ton_km > 0 else 0
+                    co2e_per_ton_km = route.total_co2e / ton_km if ton_km > 0 else 0
+                    
+                    efficiency_data.append({
+                        "Route ID": r["id"],
+                        "Cost (€/ton-km)": f"{cost_per_ton_km:.4f}",
+                        "CO₂e (kg/ton-km)": f"{co2e_per_ton_km:.4f}"
+                    })
+                
+                st.table(pd.DataFrame(efficiency_data))
+            
+            with tab3:
+                # Efficiency metrics
+                st.markdown("### Efficiency Metrics")
+                
+                # Calculate various efficiency metrics
+                metrics_data = []
+                for r in routes_to_compare:
+                    route = r["route"]
+                    params = r["parameters"]
+                    
+                    vehicle_id = params["vehicle_type"]
+                    vehicle = get_vehicle_by_id(vehicle_id)
+                    vehicle_name = vehicle.name if vehicle else "Unknown"
+                    
+                    metrics_data.append({
+                        "Route ID": r["id"],
+                        "Vehicle": vehicle_name,
+                        "CO₂e/km (kg)": f"{route.total_co2e / route.total_distance:.3f}",
+                        "Cost/km (€)": f"{route.total_cost / route.total_distance:.2f}",
+                        "CO₂e/€": f"{route.total_co2e / route.total_cost:.3f}",
+                        "Duration/Distance (min/km)": f"{(route.total_duration * 60) / route.total_distance:.2f}"
+                    })
+                
+                st.table(pd.DataFrame(metrics_data))
+                
+                # Create a radar chart to visualize multiple metrics simultaneously
+                st.markdown("### Multi-dimensional Comparison")
+                
+                # Prepare data for radar chart
+                route_ids = [r["id"] for r in routes_to_compare]
+                metrics = {
+                    "CO₂e": [r["route"].total_co2e for r in routes_to_compare],
+                    "Cost": [r["route"].total_cost for r in routes_to_compare],
+                    "Duration": [r["route"].total_duration for r in routes_to_compare],
+                    "Distance": [r["route"].total_distance for r in routes_to_compare],
+                }
+                
+                # Normalize all metrics to 0-1 range
+                normalized_metrics = {}
+                for key, values in metrics.items():
+                    max_val = max(values) if max(values) > 0 else 1
+                    normalized_metrics[key] = [v/max_val for v in values]
+                
+                # Create radar chart
+                categories = list(normalized_metrics.keys())
+                N = len(categories)
+                
+                # Create angles for each metric
+                angles = [n / float(N) * 2 * np.pi for n in range(N)]
+                angles += angles[:1]  # Close the loop
+                
+                fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
+                
+                # Draw one line per route and fill area
+                for i, route_id in enumerate(route_ids):
+                    values = [normalized_metrics[cat][i] for cat in categories]
+                    values += values[:1]  # Close the loop
+                    
+                    ax.plot(angles, values, linewidth=2, label=route_id)
+                    ax.fill(angles, values, alpha=0.1)
+                
+                # Set category labels
+                ax.set_xticks(angles[:-1])
+                ax.set_xticklabels(categories)
+                
+                # Draw axis lines for each angle and label
+                ax.set_rlabel_position(0)
+                ax.grid(True)
+                
+                # Add legend
+                ax.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1))
+                
+                plt.title("Route Comparison (Normalized Metrics)")
+                st.pyplot(fig)
+                
+                st.info("""
+                **How to read the radar chart**: 
+                Smaller values (closer to center) are better for all metrics.
+                The best route would have the smallest overall area in the radar chart.
+                """)
+            
+            with tab4:
+                # Compare the parameters used for each route
+                st.markdown("### Parameter Comparison")
+                
+                # Combine parameters for comparison
+                param_data = []
+                for r in routes_to_compare:
+                    params = r["parameters"]
+                    
+                    # Set default values for lists
+                    terrain_avg = sum(params["terrain_factors"])/len(params["terrain_factors"]) if params["terrain_factors"] else "N/A"
+                    temp_avg = sum(params["temperatures"])/len(params["temperatures"]) if params["temperatures"] else "N/A"
+                    traffic_avg = sum(params["traffic_levels"])/len(params["traffic_levels"]) if params["traffic_levels"] else "N/A"
+                    
+                    param_data.append({
+                        "Route ID": r["id"],
+                        "Origin": params["origin"].split(',')[0],
+                        "Destination": params["destination"].split(',')[0],
+                        "Stops": len(params["intermediate_stops"]),
+                        "Weight (tons)": params["weight_tons"],
+                        "Volume (m³)": params["volume_cbm"],
+                        "AI Prediction": "Yes" if params["use_ai_prediction"] else "No",
+                        "Avg Terrain Factor": f"{terrain_avg:.2f}" if isinstance(terrain_avg, (int, float)) else terrain_avg,
+                        "Avg Temperature (°C)": f"{temp_avg:.1f}" if isinstance(temp_avg, (int, float)) else temp_avg,
+                        "Avg Traffic Level": f"{traffic_avg:.2f}" if isinstance(traffic_avg, (int, float)) else traffic_avg,
+                    })
+                
+                st.table(pd.DataFrame(param_data))
+                
+                # Show the intermediate stops for each route if any
+                st.markdown("### Route Waypoints")
+                
+                for i, r in enumerate(routes_to_compare):
+                    params = r["parameters"]
+                    if params["intermediate_stops"]:
+                        st.markdown(f"**Route {r['id']} stops:** {' → '.join(params['intermediate_stops'])}")
+                    else:
+                        st.markdown(f"**Route {r['id']}:** Direct route (no intermediate stops)")
+            
+            # Additional actions
+            st.subheader("Actions")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Clear specific routes
+                if st.button("Clear Selected Routes"):
+                    # Remove the selected routes from the comparison list
+                    for idx in sorted(selected_indices, reverse=True):
+                        st.session_state.comparison_routes.pop(idx)
+                    st.rerun()
+            
+            with col2:
+                # Clear all routes
+                if st.button("Clear All Routes"):
+                    st.session_state.comparison_routes = []
+                    st.rerun()
+            
+            # Export comparison data
+            st.markdown("### Export Comparison Data")
+            
+            if st.button("Export Comparison as CSV"):
+                # Prepare the data for export
+                export_data = []
+                for r in routes_to_compare:
+                    route = r["route"]
+                    params = r["parameters"]
+                    
+                    vehicle_id = params["vehicle_type"]
+                    vehicle = get_vehicle_by_id(vehicle_id) if vehicle_id else None
+                    vehicle_name = vehicle.name if vehicle else "Unknown"
+                    
+                    export_data.append({
+                        "Route ID": r["id"],
+                        "Timestamp": r["timestamp"],
+                        "Origin": params["origin"],
+                        "Destination": params["destination"],
+                        "Intermediate Stops": len(params["intermediate_stops"]),
+                        "Weight (tons)": params["weight_tons"],
+                        "Vehicle": vehicle_name,
+                        "Distance (km)": route.total_distance,
+                        "Duration (hours)": route.total_duration,
+                        "CO2e (kg)": route.total_co2e,
+                        "Cost (€)": route.total_cost,
+                        "AI Prediction": "Yes" if route.used_ai_prediction else "No"
+                    })
+                
+                # Convert to CSV
+                df = pd.DataFrame(export_data)
+                csv = df.to_csv(index=False)
+                
+                # Create download button
+                st.download_button(
+                    label="Download CSV",
+                    data=csv,
+                    file_name=f"route_comparison_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+        else:
+            st.info("Please select at least one route to compare.")
+        
+        # Options to calculate new routes for comparison
+        st.subheader("Create New Comparison Routes")
+        
+        st.markdown("""
+        To create more routes for comparison, use the Route Planner and change parameters such as:
+        
+        - Different vehicle types
+        - Various intermediate stops
+        - Adjusting terrain, temperature, or traffic factors
+        - Enabling or disabling AI prediction
+        
+        Each route you calculate will be saved for comparison.
+        """)
 
 elif page == "Carbon Reports":
     st.title("📊 Carbon Emission Reports")

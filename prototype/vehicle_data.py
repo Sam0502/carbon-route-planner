@@ -60,12 +60,45 @@ VEHICLE_TYPES = {
         cost_per_km=0.9,    # 12% more expensive
         max_payload=2.8,    # tons
         avg_speed=85.0      # km/h
+    ),
+    # Aviation transportation options
+    "cargo_plane_medium": VehicleType(
+        id="cargo_plane_medium",
+        name="Medium Cargo Plane",
+        co2e_per_km=12.0,   # kg CO2e per km - much higher due to aviation emissions
+        cost_per_km=15.0,   # currency units per km - significantly more expensive
+        max_payload=30.0,   # tons
+        avg_speed=750.0     # km/h - much faster than ground transportation
+    ),
+    "cargo_plane_large": VehicleType(
+        id="cargo_plane_large",
+        name="Large Cargo Plane",
+        co2e_per_km=22.0,   # kg CO2e per km
+        cost_per_km=25.0,   # currency units per km
+        max_payload=100.0,  # tons
+        avg_speed=800.0     # km/h
+    ),
+    "cargo_plane_small": VehicleType(
+        id="cargo_plane_small",
+        name="Small Cargo Plane",
+        co2e_per_km=8.0,    # kg CO2e per km
+        cost_per_km=12.0,   # currency units per km
+        max_payload=10.0,   # tons
+        avg_speed=650.0     # km/h
+    ),
+    "sustainable_aviation": VehicleType(
+        id="sustainable_aviation",
+        name="Sustainable Aviation (SAF)",
+        co2e_per_km=9.0,    # kg CO2e per km - 25% lower emissions with sustainable aviation fuel
+        cost_per_km=18.0,   # currency units per km - more expensive due to SAF costs
+        max_payload=30.0,   # tons
+        avg_speed=750.0     # km/h
     )
 }
 
 def get_vehicle_by_id(vehicle_id: str) -> VehicleType:
     """Get a vehicle type by its ID."""
-    if vehicle_id not in VEHICLE_TYPES:
+    if not vehicle_id or vehicle_id not in VEHICLE_TYPES:
         raise ValueError(f"Vehicle type '{vehicle_id}' not found")
     return VEHICLE_TYPES[vehicle_id]
 

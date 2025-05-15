@@ -1,0 +1,26 @@
+{
+  "id": "7f5be24d",
+  "timestamp": "2025-05-08 17:56:43",
+  "route": {
+    "origin": "201, Clayton Road, VIC 3168",
+    "destination": "Monash University Clayton",
+    "intermediate_stops": [],
+    "total_distance": 13.501,
+    "total_co2e": 4.7591025,
+    "vehicle_type": "electric"
+  },
+  "parameters": {
+    "weight_tons": 5.0,
+    "use_ai_prediction": true,
+    "terrain_factors": [
+      1.0
+    ],
+    "temperatures": [
+      20.0
+    ],
+    "traffic_levels": [
+      0.5
+    ]
+  },
+  "ai_metadata": {}
+}

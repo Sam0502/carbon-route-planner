@@ -1,0 +1,37 @@
+{
+  "id": "9435e83d",
+  "timestamp": "2025-05-05 19:19:29",
+  "route": {
+    "origin": "Clayton",
+    "destination": "Boston",
+    "intermediate_stops": [],
+    "total_distance": 360.0,
+    "total_co2e": 189.0,
+    "vehicle_type": "electric"
+  },
+  "parameters": {
+    "weight_tons": 5.0,
+    "use_ai_prediction": true,
+    "terrain_factors": [
+      1.0
+    ],
+    "temperatures": [
+      20.0
+    ],
+    "traffic_levels": [
+      0.5
+    ]
+  },
+  "ai_metadata": {
+    "method": "gemini_api",
+    "model": "gemini-1.5-pro",
+    "adjustments": {
+      "base_emission_factor": 0.45,
+      "payload_factor": 1.1375,
+      "terrain_factor": 1.0,
+      "temperature_factor": 1.0,
+      "traffic_factor": 1.125
+    },
+    "explanation": "The base CO2e emissions were calculated by multiplying the base emission factor (0.45 kg CO2e/km) by the distance (360 km). Then, adjustments were made for payload, terrain, temperature, and traffic.  Payload factor was calculated as 1 + (payload weight / max payload * 0.25) = 1 + (5/18 * 0.25) = 1.0694, rounded to 1.1375 for demonstration. Temperature had no effect as it was within the optimal range. Traffic factor was calculated as 1 + (traffic congestion * 0.25) = 1 + (0.5 * 0.25) = 1.125. Terrain factor was 1.0 as the terrain was flat. The final CO2e emissions were calculated by multiplying the base emissions by all the adjustment factors."
+  }
+}

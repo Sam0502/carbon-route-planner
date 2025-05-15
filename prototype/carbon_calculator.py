@@ -44,13 +44,39 @@ def calculate_segment_footprint(
     # Default co2e calculation using the standard factor-based approach
     co2e = distance * vehicle.co2e_per_km
     
-    # Default payload adjustment if needed
-    if weight_tons is not None and weight_tons > 0:
-        # Simplified adjustment: emissions increase proportionally 
-        # with payload up to max_payload
-        payload_factor = min(weight_tons / vehicle.max_payload, 1.0)
-        # 70% base emissions + 30% that scales with payload
-        co2e = co2e * (0.7 + (0.3 * payload_factor))
+    # Check if this is an aviation vehicle type
+    is_aviation = vehicle_type_id.startswith("cargo_plane") or vehicle_type_id == "sustainable_aviation"
+    
+    if is_aviation:
+        # Aviation-specific adjustments
+        # 1. Additional radiative forcing impacts at high altitude (for non-sustainable aviation)
+        if vehicle_type_id != "sustainable_aviation":
+            altitude_factor = 1.9  # Radiative forcing multiplier for high-altitude emissions
+            co2e *= altitude_factor
+        
+        # 2. Flight phase adjustments (takeoff/landing use more fuel than cruising)
+        if distance < 500:
+            # Short flights spend proportionally more time in takeoff/landing
+            co2e *= 1.25
+        elif distance < 1500:
+            # Medium-haul flights
+            co2e *= 1.15
+        # Long-haul flights (>1500km) use the standard calculation
+            
+        # 3. Adjust for payload (aviation payload efficiency is different)
+        if weight_tons is not None and weight_tons > 0:
+            # Calculate payload efficiency - more sensitive than ground transport
+            payload_factor = min(weight_tons / vehicle.max_payload, 1.0)
+            # 50% base emissions + 50% that scales with payload for aviation
+            co2e = co2e * (0.5 + (0.5 * payload_factor))
+    else:
+        # Standard ground vehicle payload adjustment
+        if weight_tons is not None and weight_tons > 0:
+            # Simplified adjustment: emissions increase proportionally 
+            # with payload up to max_payload
+            payload_factor = min(weight_tons / vehicle.max_payload, 1.0)
+            # 70% base emissions + 30% that scales with payload
+            co2e = co2e * (0.7 + (0.3 * payload_factor))
     
     # Enhanced calculation using AI prediction if available and enabled
     prediction_metadata = None
@@ -59,15 +85,16 @@ def calculate_segment_footprint(
             # Get the AI predictor singleton
             predictor = get_predictor()
             
-            # Request a prediction based on all available factors
+            # Include aviation flag in the prediction request
             predicted_co2e, metadata = predictor.predict_co2e(
                 vehicle_type_id=vehicle_type_id,
                 distance=distance,
                 avg_speed=avg_speed,
                 weight_tons=weight_tons or 0,
-                terrain_factor=terrain_factor,
+                terrain_factor=terrain_factor if not is_aviation else 1.0,  # Terrain not relevant for aviation
                 temperature=temperature,
-                traffic_level=traffic_level
+                traffic_level=traffic_level if not is_aviation else 0.0,    # Traffic not relevant for aviation
+                is_aviation=is_aviation
             )
             
             # Use the AI prediction instead of the factor-based calculation

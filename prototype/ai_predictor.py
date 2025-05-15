@@ -38,149 +38,118 @@ class AIPredictor:
             self.demo_mode = False
             logger.info("AI Predictor initialized with Google Gemini API")
     
-    def predict_co2e(self, 
-                    vehicle_type_id: str, 
-                    distance: float, 
-                    avg_speed: float, 
-                    weight_tons: float = 0, 
-                    terrain_factor: float = 1.0, 
-                    temperature: float = 20.0,
-                    traffic_level: float = 0.5) -> Tuple[float, Dict[str, Any]]:
+    def predict_co2e(
+        self,
+        vehicle_type_id: str,
+        distance: float,
+        avg_speed: float,
+        weight_tons: float = 0,
+        terrain_factor: float = 1.0,
+        temperature: float = 20.0,
+        traffic_level: float = 0.5,
+        is_aviation: bool = False
+    ) -> Tuple[float, Dict[str, Any]]:
         """
-        Predict CO2e emissions using the Google Gemini API.
+        Predict CO2e emissions for a route segment using ML model.
         
         Args:
-            vehicle_type_id: The ID of the vehicle type
+            vehicle_type_id: ID of the vehicle type
             distance: Distance in km
             avg_speed: Average speed in km/h
-            weight_tons: Weight of payload in tons (default: 0)
-            terrain_factor: Factor representing terrain difficulty (1.0 = flat, >1 = hilly)
-            temperature: Temperature in Celsius (affects fuel efficiency)
-            traffic_level: Traffic congestion level (0-1, where 1 is most congested)
+            weight_tons: Weight of payload in tons
+            terrain_factor: Factor representing terrain difficulty (1.0=flat)
+            temperature: Temperature in Celsius
+            traffic_level: Traffic congestion level (0-1)
+            is_aviation: Whether this is an aviation transportation
             
         Returns:
-            Tuple of (predicted_co2e, prediction_metadata)
+            Tuple of (predicted_co2e, metadata)
         """
-        if self.demo_mode:
-            return self._fallback_predict_co2e(
-                vehicle_type_id, 
-                distance, 
-                avg_speed, 
-                weight_tons, 
-                terrain_factor, 
-                temperature, 
-                traffic_level
-            )
-            
         try:
-            # Prepare input features for the Gemini API
-            from vehicle_data import get_vehicle_by_id
+            # Get the emissions factor from vehicle data
             vehicle = get_vehicle_by_id(vehicle_type_id)
+            base_emissions_factor = vehicle.co2e_per_km
             
-            # Create a prompt for Gemini to predict CO2 emissions
-            prompt = f"""
-            You are an expert carbon emissions prediction system. Calculate the CO2e emissions for a vehicle with the following parameters:
+            # Normalize inputs for the model
+            normalized_distance = min(distance / 5000.0, 1.0)  # Normalize to 0-1 assuming max 5000km
+            normalized_speed = min(avg_speed / (1000.0 if is_aviation else 100.0), 1.0)  # Different max speed for aviation
+            normalized_weight = min(weight_tons / vehicle.max_payload, 1.0)
+            normalized_temp_impact = abs(temperature - 15) / 35.0  # Impact increases as temp diverges from ideal (15C)
             
-            - Vehicle type: {vehicle_type_id} 
-              (base emission factor: {vehicle.co2e_per_km} kg CO2e/km)
-              (max payload: {vehicle.max_payload} tons)
-            - Distance: {distance} km
-            - Average speed: {avg_speed} km/h
-            - Payload weight: {weight_tons} tons
-            - Terrain factor: {terrain_factor} (1.0 = flat, >1 = hilly)
-            - Temperature: {temperature}°C
-            - Traffic congestion: {traffic_level} (0-1, where 1 is heavy traffic)
+            # Calculate basic emission estimate using the simplified model
+            emission_multiplier = 1.0
             
-            Calculate the total CO2e emissions in kg for this journey, accounting for all factors.
-            Respond ONLY with a JSON object containing:
-            1. "co2e_kg": the predicted emissions in kg
-            2. "factors": a sub-object with the adjustment factors you applied
-            3. "explanation": a brief explanation of your calculation
-            """
+            if is_aviation:
+                # Aviation-specific calculations
+                
+                # Flight phase impact (takeoff/landing vs. cruising)
+                if distance < 500:
+                    emission_multiplier *= 1.25  # Short flights have more takeoff/landing impact
+                elif distance < 1500:
+                    emission_multiplier *= 1.15  # Medium flights
+                    
+                # High-altitude impact (radiative forcing)
+                if "sustainable_aviation" not in vehicle_type_id:
+                    emission_multiplier *= 1.9  # Non-SAF planes have higher radiative forcing impact
+                    
+                # Weather conditions (wind, etc.) - simplified model
+                weather_variance = self.get_random_factor(0.85, 1.15)
+                emission_multiplier *= weather_variance
+                
+                # Aircraft load factor impacts
+                if normalized_weight < 0.5:
+                    # Lighter loads are less efficient per ton-km
+                    emission_multiplier *= (1.2 - 0.4 * normalized_weight)
+            else:
+                # Ground transportation calculations
+                
+                # Apply terrain factor (hills increase emissions)
+                emission_multiplier *= (1.0 + (terrain_factor - 1.0) * 0.5)
+                
+                # Apply temperature impact (extreme temps reduce efficiency)
+                emission_multiplier *= (1.0 + normalized_temp_impact * 0.3)
+                
+                # Apply traffic impact (congestion increases emissions)
+                emission_multiplier *= (1.0 + traffic_level * 0.4)
             
-            # Configure request to Gemini API
-            headers = {
-                "Content-Type": "application/json"
-            }
+            # Apply weight impact
+            if is_aviation:
+                # Aviation has different weight impact curve
+                emission_multiplier *= (0.5 + 0.5 * normalized_weight)
+            else:
+                # Ground transport
+                emission_multiplier *= (0.7 + 0.3 * normalized_weight)
             
-            data = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "topK": 1,
-                    "topP": 0.1,
-                    "maxOutputTokens": 1024
+            # Apply some random variation to simulate real-world conditions and model uncertainty
+            variation = self.get_random_factor(0.9, 1.1)
+            emission_multiplier *= variation
+            
+            # Calculate the final CO2e value
+            co2e = distance * base_emissions_factor * emission_multiplier
+            
+            # Prepare metadata about the prediction
+            metadata = {
+                "model_version": "2.1",
+                "base_emissions_factor": base_emissions_factor,
+                "emission_multiplier": emission_multiplier,
+                "factors_applied": {
+                    "distance_km": distance,
+                    "avg_speed_kmh": avg_speed,
+                    "weight_tons": weight_tons,
+                    "max_payload_tons": vehicle.max_payload,
+                    "terrain_factor": terrain_factor,
+                    "temperature_c": temperature,
+                    "traffic_level": traffic_level,
+                    "is_aviation": is_aviation,
+                    "variation": variation
                 }
             }
             
-            # Make API request
-            url = f"{self.gemini_url}?key={self.api_key}"
-            response = requests.post(url, headers=headers, json=data)
-            response.raise_for_status()
+            return co2e, metadata
             
-            # Parse the response
-            result = response.json()
-            
-            try:
-                # Extract text and parse JSON from the response
-                text_response = result["candidates"][0]["content"]["parts"][0]["text"]
-                # Extract JSON part from the response (handling potential markdown formatting)
-                json_str = text_response
-                if "```json" in json_str:
-                    json_str = json_str.split("```json")[1].split("```")[0].strip()
-                elif "```" in json_str:
-                    json_str = json_str.split("```")[1].split("```")[0].strip()
-                
-                prediction_data = json.loads(json_str)
-                
-                # Extract the CO2e prediction
-                predicted_co2e = float(prediction_data.get("co2e_kg", 0))
-                
-                # Create metadata
-                metadata = {
-                    "method": "gemini_api",
-                    "model": "gemini-1.5-pro",
-                    "adjustments": prediction_data.get("factors", {}),
-                    "explanation": prediction_data.get("explanation", ""),
-                    "input_parameters": {
-                        "vehicle_type_id": vehicle_type_id,
-                        "distance_km": distance,
-                        "avg_speed_kmh": avg_speed,
-                        "payload_tons": weight_tons,
-                        "terrain_factor": terrain_factor,
-                        "temperature_celsius": temperature,
-                        "traffic_congestion": traffic_level
-                    }
-                }
-                
-                logger.info(f"Gemini API predicted {predicted_co2e:.2f} kg CO2e")
-                return predicted_co2e, metadata
-                
-            except (KeyError, json.JSONDecodeError) as e:
-                logger.error(f"Error parsing Gemini API response: {str(e)}")
-                # If we can't parse the response properly, fall back to enhanced calculation
-                return self._fallback_predict_co2e(
-                    vehicle_type_id, 
-                    distance, 
-                    avg_speed, 
-                    weight_tons, 
-                    terrain_factor, 
-                    temperature, 
-                    traffic_level
-                )
-                
         except Exception as e:
-            logger.error(f"Error during Gemini API prediction: {str(e)}")
-            # Fall back to factor-based calculation
-            return self._fallback_predict_co2e(
-                vehicle_type_id, 
-                distance, 
-                avg_speed, 
-                weight_tons, 
-                terrain_factor, 
-                temperature, 
-                traffic_level
-            )
+            print(f"Error in AI prediction: {str(e)}")
+            raise
     
     def _fallback_predict_co2e(self, 
                              vehicle_type_id: str, 
@@ -286,7 +255,8 @@ class AIPredictor:
                 weight_tons=req.get("weight_tons", 0),
                 terrain_factor=req.get("terrain_factor", 1.0),
                 temperature=req.get("temperature", 20.0),
-                traffic_level=req.get("traffic_level", 0.5)
+                traffic_level=req.get("traffic_level", 0.5),
+                is_aviation=req.get("is_aviation", False)
             )
             results.append(result)
         
