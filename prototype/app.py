@@ -10,7 +10,7 @@ import json
 import uuid
 import os
 from models import ShipmentRequest
-from maps_client import MapsClient
+from enhanced_maps_client import EnhancedMapsClient
 from optimizer import RouteOptimizer
 from vehicle_data import get_all_vehicles, get_vehicle_by_id
 from ai_predictor import get_predictor
@@ -26,7 +26,7 @@ st.set_page_config(
 # Initialize clients
 @st.cache_resource
 def get_maps_client():
-    return MapsClient()
+    return EnhancedMapsClient()
 
 @st.cache_resource
 def get_route_optimizer(_maps_client):
@@ -107,24 +107,38 @@ if page == "Route Planner":
                     with st.expander("Did you mean one of these addresses?"):
                         for i, suggestion in enumerate(dest_validation['suggestions'][:3]):
                             if st.button(f"Use: {suggestion}", key=f"dest_sugg_{i}"):
-                                destination = suggestion
-
-    # Intermediate stops
+                                destination = suggestion    # Intermediate stops
     with st.sidebar.expander("Add Intermediate Stops", expanded=False):
         num_stops = st.number_input("Number of stops", 0, 5, 0)
         intermediate_stops = []
         for i in range(num_stops):
             stop = st.text_input(f"Stop {i+1}", "")
             if stop:
+                # Add address validation for intermediate stops
+                if maps_client and hasattr(maps_client, 'validate_address'):
+                    with st.spinner(f"Validating stop {i+1} address..."):
+                        stop_validation = maps_client.validate_address(stop)
+                        if stop_validation['valid']:
+                            if stop != stop_validation['formatted_address']:
+                                st.success(f"Validated address: {stop_validation['formatted_address']}")
+                                if st.button(f"Use validated address for Stop {i+1}"):
+                                    stop = stop_validation['formatted_address']
+                        else:
+                            st.warning(f"Could not validate stop {i+1} address. Please check for typos.")
+                        
+                        # Show suggestions if available
+                        if stop_validation.get('suggestions'):
+                            with st.expander(f"Did you mean one of these addresses for Stop {i+1}?"):
+                                for j, suggestion in enumerate(stop_validation['suggestions'][:3]):
+                                    if st.button(f"Use: {suggestion}", key=f"stop_{i}_sugg_{j}"):
+                                        stop = suggestion
                 intermediate_stops.append(stop)
 
     # Payload characteristics
     with st.sidebar.expander("Payload Characteristics", expanded=False):
         weight_tons = st.number_input("Weight (tons)", 0.0, 30.0, 5.0, 0.1)
-        volume_cbm = st.number_input("Volume (cubic meters)", 0.0, 100.0, 10.0, 0.5)
-
-    # Budget constraint
-    max_budget = st.sidebar.number_input("Maximum Budget (€)", 0.0, 10000.0, 1000.0, 50.0)
+        volume_cbm = st.number_input("Volume (cubic meters)", 0.0, 100.0, 10.0, 0.5)    # Budget constraint
+    max_budget = st.sidebar.number_input("Maximum Budget (€)", 0.0, 1e308, 1000.0, 50.0, help="Set the maximum budget for transportation. Enter a very large number for virtually unlimited budget.")
 
     # Vehicle selection
     st.sidebar.markdown("### Vehicle Selection")

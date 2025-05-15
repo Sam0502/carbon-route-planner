@@ -11,6 +11,7 @@ import json
 import requests
 from typing import Dict, Any, Optional, Tuple, List
 from dotenv import load_dotenv
+from vehicle_data import get_vehicle_by_id
 
 # Load environment variables
 load_dotenv()
@@ -37,6 +38,20 @@ class AIPredictor:
         else:
             self.demo_mode = False
             logger.info("AI Predictor initialized with Google Gemini API")
+    
+    def get_random_factor(self, min_value: float, max_value: float) -> float:
+        """
+        Generate a random factor within a given range.
+        
+        Args:
+            min_value: Minimum value for the random factor
+            max_value: Maximum value for the random factor
+            
+        Returns:
+            Random float between min_value and max_value
+        """
+        import random
+        return min_value + random.random() * (max_value - min_value)
     
     def predict_co2e(
         self,

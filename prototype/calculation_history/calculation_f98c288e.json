@@ -1,0 +1,26 @@
+{
+  "id": "f98c288e",
+  "timestamp": "2025-05-15 15:00:01",
+  "route": {
+    "origin": "New York, NY",
+    "destination": "Boston, MA",
+    "intermediate_stops": [],
+    "total_distance": 344.878,
+    "total_co2e": 121.56949499999999,
+    "vehicle_type": "electric"
+  },
+  "parameters": {
+    "weight_tons": 5.0,
+    "use_ai_prediction": true,
+    "terrain_factors": [
+      1.0
+    ],
+    "temperatures": [
+      20.0
+    ],
+    "traffic_levels": [
+      0.5
+    ]
+  },
+  "ai_metadata": {}
+}

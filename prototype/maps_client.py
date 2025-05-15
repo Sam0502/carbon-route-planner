@@ -13,23 +13,35 @@ load_dotenv()
 
 class MapsClient:
     """Client for interacting with Google Maps APIs."""
-    
-    def __init__(self, api_key: str = None):
+      def __init__(self, api_key: str = None):
         """Initialize Google Maps client with API key."""
         self.demo_mode = False
         self.last_route_warnings = []
         
         if api_key is None:
             api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
-            if api_key is None:
-                print("Warning: No API key found. Using demo mode.")
+            if not api_key or api_key.strip() == "":
+                print("Warning: No API key found or empty API key. Using demo mode.")
                 self.demo_mode = True
                 self.client = None
                 return
+            print(f"Found API key in environment: {api_key[:5]}...{api_key[-4:]}")
         
-        # Initialize the API client without skipping to demo mode
-        self.client = googlemaps.Client(key=api_key)
-        print(f"Initialized Maps client with API key: {api_key[:5]}...{api_key[-4:]}")
+        try:
+            # Initialize the API client without skipping to demo mode
+            self.client = googlemaps.Client(key=api_key)
+            print(f"Initialized Maps client with API key: {api_key[:5]}...{api_key[-4:]}")
+            
+            # Test the API with a simple geocode request
+            test_result = self.client.geocode("New York, NY")
+            if test_result:
+                print(f"API test successful - geocoding works")
+            else:
+                print(f"Warning: API returned empty result - might be restricted")
+        except Exception as e:
+            print(f"Error initializing Maps client: {str(e)}. Switching to demo mode.")
+            self.demo_mode = True
+            self.client = None
     
     def validate_address(self, address: str) -> Dict[str, Any]:
         """
@@ -80,23 +92,31 @@ class MapsClient:
         except Exception as e:
             print(f"Address validation error: {str(e)}")
             return {'valid': False, 'formatted_address': None, 'suggestions': []}
-            
-    def get_route(self, origin: str, destination: str, waypoints: List[str] = None) -> Dict[str, Any]:
+              def get_route(self, origin: str, destination: str, waypoints: List[str] = None) -> Dict[str, Any]:
         """Get route information between origin and destination with optional waypoints."""
         # Reset warnings from previous route requests
         self.last_route_warnings = []
         
-        if self.demo_mode:
+        if self.demo_mode or self.client is None:
+            print("Using demo mode: Maps API client not initialized")
             return self._get_demo_route(origin, destination, waypoints)
-        
-        try:
+          try:
             # Validate and format the addresses
+            print(f"Validating addresses: origin='{origin}', destination='{destination}'")
             origin_data = self.validate_address(origin)
             destination_data = self.validate_address(destination)
             
+            # Check for empty or invalid addresses
+            if not origin or not destination:
+                print(f"ERROR: Empty address provided: origin='{origin}', destination='{destination}'")
+                self.last_route_warnings.append("Empty address provided")
+                return self._get_demo_route(origin, destination, waypoints)
+                
             # Use formatted addresses if available, otherwise use original
             formatted_origin = origin_data.get('formatted_address', origin) if origin_data.get('valid', False) else origin
             formatted_destination = destination_data.get('formatted_address', destination) if destination_data.get('valid', False) else destination
+            
+            print(f"Formatted addresses: origin='{formatted_origin}', destination='{formatted_destination}'")
             
             # Format waypoints if provided
             formatted_waypoints = waypoints
@@ -109,22 +129,34 @@ class MapsClient:
             
             print(f"Requesting directions from {formatted_origin} to {formatted_destination}")
             now = datetime.now()
-            
-            if formatted_waypoints:
-                directions = self.client.directions(
-                    origin=formatted_origin,
-                    destination=formatted_destination,
-                    waypoints=formatted_waypoints,
-                    mode="driving",
-                    departure_time=now
-                )
-            else:
-                directions = self.client.directions(
-                    origin=formatted_origin,
-                    destination=formatted_destination,
-                    mode="driving",
-                    departure_time=now
-                )
+              # Try to get directions with detailed error logging
+            try:
+                if formatted_waypoints:
+                    print(f"Requesting directions with {len(formatted_waypoints)} waypoints: {formatted_waypoints}")
+                    directions = self.client.directions(
+                        origin=formatted_origin,
+                        destination=formatted_destination,
+                        waypoints=formatted_waypoints,
+                        mode="driving",
+                        departure_time=now
+                    )
+                else:
+                    print(f"Requesting direct directions without waypoints")
+                    directions = self.client.directions(
+                        origin=formatted_origin,
+                        destination=formatted_destination,
+                        mode="driving",
+                        departure_time=now
+                    )
+                    
+                if directions:
+                    print(f"Success! Received {len(directions)} routes from API")
+                else:
+                    print(f"Warning: API returned empty directions list")
+            except googlemaps.exceptions.ApiError as api_err:
+                print(f"Directions API error: {str(api_err)}")
+                self.last_route_warnings.append(f"Directions API error: {str(api_err)}")
+                return self._get_demo_route(origin, destination, waypoints)
                 
             print(f"Received {len(directions)} routes from API")
             

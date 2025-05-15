@@ -1,0 +1,49 @@
+{
+  "id": "ce762e7b",
+  "timestamp": "2025-05-15 15:17:05",
+  "route": {
+    "origin": "New York, NY",
+    "destination": "Boston, MA",
+    "intermediate_stops": [
+      "clayton"
+    ],
+    "total_distance": 920.0,
+    "total_co2e": 761.4295404763916,
+    "vehicle_type": "standard_diesel"
+  },
+  "parameters": {
+    "weight_tons": 5.0,
+    "use_ai_prediction": true,
+    "terrain_factors": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "temperatures": [
+      20.0,
+      20.0,
+      20.0
+    ],
+    "traffic_levels": [
+      0.5,
+      0.5,
+      0.5
+    ]
+  },
+  "ai_metadata": {
+    "model_version": "2.1",
+    "base_emissions_factor": 0.9,
+    "emission_multiplier": 0.8938954531674206,
+    "factors_applied": {
+      "distance_km": 480.0,
+      "avg_speed_kmh": 60.0,
+      "weight_tons": 5.0,
+      "max_payload_tons": 24.0,
+      "terrain_factor": 1.0,
+      "temperature_c": 20.0,
+      "traffic_level": 0.5,
+      "is_aviation": false,
+      "variation": 0.936786911022074
+    }
+  }
+}

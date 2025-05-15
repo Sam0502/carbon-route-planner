@@ -5,7 +5,7 @@ from typing import List, Dict, Optional, Tuple
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 from models import Route, ShipmentRequest
-from maps_client import MapsClient
+from enhanced_maps_client import EnhancedMapsClient as MapsClient
 from carbon_calculator import calculate_route_footprint, calculate_optimal_route
 from vehicle_data import get_all_vehicles, get_vehicle_by_id
 
@@ -201,10 +201,18 @@ class RouteOptimizer:
             for i in range(len(route_waypoints) - 1):
                 orig = route_waypoints[i]
                 dest = route_waypoints[i + 1]
-                
-                # Get distance and time between these points (simplified for MVP)
+                  # Get distance and time between these points (simplified for MVP)
                 distance = distance_matrix[i][i + 1] / 1000  # Convert to km
-                duration = distance / self.vehicle_types[vehicle_type_id].avg_speed  # Estimated time
+                
+                # Check if this is an aviation vehicle type
+                is_aviation = vehicle_type_id.startswith("cargo_plane") or vehicle_type_id == "sustainable_aviation"
+                
+                # Calculate duration based on vehicle type
+                if is_aviation:
+                    duration = distance / self.vehicle_types[vehicle_type_id].avg_speed  # Use aviation speed
+                    print(f"Using aviation speed for {vehicle_type_id}: {self.vehicle_types[vehicle_type_id].avg_speed} km/h")
+                else:
+                    duration = distance / self.vehicle_types[vehicle_type_id].avg_speed  # Use ground vehicle speed
                 
                 # Create the segment with AI prediction if enabled
                 from carbon_calculator import calculate_segment_footprint

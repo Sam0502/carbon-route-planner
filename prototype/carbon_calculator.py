@@ -169,10 +169,18 @@ def calculate_route_footprint(
         traffic_level = traffic_levels[i] if traffic_levels and i < len(traffic_levels) else 0.5
         
         # For batch predictions, collect all data first
-        if use_ai_prediction:
-            # Calculate average speed for prediction
+        if use_ai_prediction:            # Calculate average speed for prediction
             distance = segment_data['distance']
             duration = segment_data['duration']
+            
+            # Check if this is an aviation transportation
+            is_aviation = vehicle_type_id.startswith("cargo_plane") or vehicle_type_id == "sustainable_aviation"
+            
+            # Use air_duration if available for aviation transportation
+            if is_aviation and 'air_duration' in segment_data:
+                duration = segment_data['air_duration']
+                print(f"Using aviation duration: {duration:.2f} hours for {distance:.1f} km")
+            
             avg_speed = distance / duration if duration > 0 else get_vehicle_by_id(vehicle_type_id).avg_speed
             
             ai_prediction_batch.append({
@@ -201,12 +209,22 @@ def calculate_route_footprint(
                 # Calculate cost (not affected by prediction)
                 vehicle = get_vehicle_by_id(vehicle_type_id)
                 cost = segment_info["distance"] * vehicle.cost_per_km
+                  # Check if this is an aviation transport and if air_duration is available
+                is_aviation = vehicle_type_id.startswith("cargo_plane") or vehicle_type_id == "sustainable_aviation"
+                segment_index = segment_info["segment_index"]
+                
+                # Use appropriate duration based on transport type
+                if is_aviation and 'air_duration' in segments_data[segment_index]:
+                    duration = segments_data[segment_index]['air_duration']
+                    print(f"Using aviation duration for {segment_info['origin']} to {segment_info['destination']}: {duration:.2f} hours")
+                else:
+                    duration = segments_data[segment_index]["duration"]
                 
                 segment = RouteSegment(
                     origin=segment_info["origin"],
                     destination=segment_info["destination"],
                     distance=segment_info["distance"],
-                    duration=segments_data[segment_info["segment_index"]]["duration"],
+                    duration=duration,
                     vehicle_type_id=vehicle_type_id,
                     co2e=predicted_co2e,
                     cost=cost
@@ -237,11 +255,17 @@ def calculate_route_footprint(
         temperature = temperatures[i] if temperatures and i < len(temperatures) else 20.0
         traffic_level = traffic_levels[i] if traffic_levels and i < len(traffic_levels) else 0.5
         
+        # Check if this is an aviation transportation
+        is_aviation = vehicle_type_id.startswith("cargo_plane") or vehicle_type_id == "sustainable_aviation"
+        
+        # Use air_duration if available for aviation vehicles
+        duration = segment_data['air_duration'] if is_aviation and 'air_duration' in segment_data else segment_data['duration']
+        
         segment = calculate_segment_footprint(
             origin=origin,
             destination=destination,
             distance=segment_data['distance'],
-            duration=segment_data['duration'],
+            duration=duration,
             vehicle_type_id=vehicle_type_id,
             weight_tons=weight_tons,
             use_ai_prediction=use_ai_prediction,

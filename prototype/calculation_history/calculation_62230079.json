@@ -1,0 +1,41 @@
+{
+  "id": "62230079",
+  "timestamp": "2025-05-15 15:37:15",
+  "route": {
+    "origin": "New York, NY",
+    "destination": "Boston, MA",
+    "intermediate_stops": [],
+    "total_distance": 344.878,
+    "total_co2e": 5907.447674396121,
+    "vehicle_type": "cargo_plane_medium"
+  },
+  "parameters": {
+    "weight_tons": 5.0,
+    "use_ai_prediction": true,
+    "terrain_factors": [
+      1.0
+    ],
+    "temperatures": [
+      20.0
+    ],
+    "traffic_levels": [
+      0.5
+    ]
+  },
+  "ai_metadata": {
+    "model_version": "2.1",
+    "base_emissions_factor": 12.0,
+    "emission_multiplier": 1.4274244985173794,
+    "factors_applied": {
+      "distance_km": 344.878,
+      "avg_speed_kmh": 95.21171779141103,
+      "weight_tons": 5.0,
+      "max_payload_tons": 30.0,
+      "terrain_factor": 1.0,
+      "temperature_c": 20.0,
+      "traffic_level": 0.0,
+      "is_aviation": true,
+      "variation": 1.046296176277963
+    }
+  }
+}
