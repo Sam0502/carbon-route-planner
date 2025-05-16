@@ -61,13 +61,14 @@ class EnhancedMapsClient:
             "boston": "Boston, MA",
             "chicago": "Chicago, IL",
             "clayton": "Clayton, NC"  # Add this since it's been used
-        }
-        
-        # Check if this is a single-word city that needs expansion
+        }        # Check if this is a single-word city that needs expansion
         lower_address = cleaned_address.lower()
         if lower_address in common_cities and "," not in address:
+            expanded_info = f"Expanded city name from '{address}' to '{common_cities[lower_address]}'"
+            print(expanded_info)  # For local debugging
             cleaned_address = common_cities[lower_address]
-            print(f"Expanded city name from '{address}' to '{cleaned_address}'")
+        else:
+            expanded_info = None
         
         try:
             # Try to geocode the address
@@ -78,17 +79,22 @@ class EnhancedMapsClient:
             
             # Get the first (most relevant) result
             formatted_address = geocode_result[0]['formatted_address']
-            
-            # If we have multiple results, they could be suggestions
+              # If we have multiple results, they could be suggestions
             suggestions = []
             if len(geocode_result) > 1:
                 suggestions = [result['formatted_address'] for result in geocode_result[1:5]]
                 
-            return {
+            result = {
                 'valid': True,
                 'formatted_address': formatted_address,
                 'suggestions': suggestions
             }
+            
+            # Add expansion info if available
+            if 'expanded_info' in locals() and expanded_info:
+                result['expanded_info'] = expanded_info
+                
+            return result
             
         except Exception as e:
             print(f"Address validation error: {str(e)}")

@@ -70,12 +70,18 @@ if page == "Route Planner":
     if origin and maps_client and hasattr(maps_client, 'validate_address'):
         with st.sidebar:
             with st.spinner("Validating origin address..."):
-                origin_validation = maps_client.validate_address(origin)
-                if origin_validation['valid']:
+                origin_validation = maps_client.validate_address(origin)                if origin_validation['valid']:
+                        # Display address expansion info if available
+                        if 'expanded_info' in origin_validation:
+                            st.info(origin_validation['expanded_info'])
                     if origin != origin_validation['formatted_address']:
                         st.success(f"Validated address: {origin_validation['formatted_address']}")
                         if st.button("Use validated origin address"):
                             origin = origin_validation['formatted_address']
+                    
+                    # Display address expansion info if available
+                    if 'expanded_info' in origin_validation:
+                        st.info(origin_validation['expanded_info'])
                 else:
                     st.warning("Could not validate the origin address. Please check for typos.")
                 
@@ -94,6 +100,9 @@ if page == "Route Planner":
         with st.sidebar:
             with st.spinner("Validating destination address..."):
                 dest_validation = maps_client.validate_address(destination)
+                    # Display address expansion info if available
+                    if 'expanded_info' in dest_validation:
+                        st.info(dest_validation['expanded_info'])
                 if dest_validation['valid']:
                     if destination != dest_validation['formatted_address']:
                         st.success(f"Validated address: {dest_validation['formatted_address']}")
@@ -118,6 +127,9 @@ if page == "Route Planner":
                 if maps_client and hasattr(maps_client, 'validate_address'):
                     with st.spinner(f"Validating stop {i+1} address..."):
                         stop_validation = maps_client.validate_address(stop)
+                            # Display address expansion info if available
+                            if 'expanded_info' in stop_validation:
+                                st.info(stop_validation['expanded_info'])
                         if stop_validation['valid']:
                             if stop != stop_validation['formatted_address']:
                                 st.success(f"Validated address: {stop_validation['formatted_address']}")
